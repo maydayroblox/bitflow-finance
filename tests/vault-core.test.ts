@@ -529,3 +529,221 @@ describe("loan repayment", () => {
     expect(finalTotal.result).not.toEqual(firstRepayAmount);
   });
 });
+
+describe("liquidation system", () => {
+  it("calculates health factor correctly", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+
+    // wallet_1 deposits 1500 STX, borrows 1000 STX
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(1500)],
+      wallet_1
+    );
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(1000), Cl.uint(5), Cl.uint(30)],
+      wallet_1
+    );
+
+    // STX price = u100 (100 cents = $1)
+    const stxPrice = 100;
+    const healthFactor = simnet.callReadOnlyFn(
+      "vault-core",
+      "calculate-health-factor",
+      [Cl.principal(wallet_1), Cl.uint(stxPrice)],
+      wallet_1
+    );
+
+    // Health factor = 150 (1500 * 100 / 100 / 1000 * 100 = 150%)
+    expect(healthFactor.result).toBeSome(Cl.uint(150));
+  });
+
+  it("identifies liquidatable positions", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+
+    // wallet_1 deposits 1500, borrows 1000
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(1500)],
+      wallet_1
+    );
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(1000), Cl.uint(5), Cl.uint(30)],
+      wallet_1
+    );
+
+    // Price at u100 (healthy: health factor = 150%)
+    const healthyCheck = simnet.callReadOnlyFn(
+      "vault-core",
+      "is-liquidatable",
+      [Cl.principal(wallet_1), Cl.uint(100)],
+      wallet_1
+    );
+    expect(healthyCheck.result).toBeBool(false);
+
+    // Price at u75 (health = 112.5%, still above 110% threshold)
+    const borderlineCheck = simnet.callReadOnlyFn(
+      "vault-core",
+      "is-liquidatable",
+      [Cl.principal(wallet_1), Cl.uint(75)],
+      wallet_1
+    );
+    expect(borderlineCheck.result).toBeBool(false);
+
+    // Price at u70 (health = 105%, below 110% threshold)
+    const unhealthyCheck = simnet.callReadOnlyFn(
+      "vault-core",
+      "is-liquidatable",
+      [Cl.principal(wallet_1), Cl.uint(70)],
+      wallet_1
+    );
+    expect(unhealthyCheck.result).toBeBool(true);
+  });
+
+  it("allows liquidation of unhealthy positions", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+    const wallet_2 = accounts.get("wallet_2")!;
+
+    // wallet_1 deposits 1500, borrows 1000
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(1500)],
+      wallet_1
+    );
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(1000), Cl.uint(5), Cl.uint(30)],
+      wallet_1
+    );
+
+    // Check initial total liquidations
+    const initialLiquidations = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-total-liquidations",
+      [],
+      wallet_1
+    );
+    expect(initialLiquidations.result).toBeUint(0);
+
+    // STX price drops to u70 (makes position liquidatable)
+    const stxPrice = 70;
+    
+    // wallet_2 liquidates wallet_1
+    const liquidationResponse = simnet.callPublicFn(
+      "vault-core",
+      "liquidate",
+      [Cl.principal(wallet_1), Cl.uint(stxPrice)],
+      wallet_2
+    );
+
+    // Verify liquidation succeeds
+    // Liquidation bonus = 1000 * 5 / 100 = 50
+    // Total to pay = 1000 + 50 = 1050
+    expect(liquidationResponse.result).toBeOk(
+      Cl.tuple({
+        "seized-collateral": Cl.uint(1500),
+        paid: Cl.uint(1050),
+        bonus: Cl.uint(50),
+      })
+    );
+
+    // Verify wallet_1's loan is deleted
+    const loanCheck = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-user-loan",
+      [Cl.principal(wallet_1)],
+      wallet_1
+    );
+    expect(loanCheck.result).toBeNone();
+
+    // Verify wallet_1's deposit is 0
+    const depositCheck = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-user-deposit",
+      [Cl.principal(wallet_1)],
+      wallet_1
+    );
+    expect(depositCheck.result).toBeUint(0);
+
+    // Verify total liquidations increased
+    const finalLiquidations = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-total-liquidations",
+      [],
+      wallet_1
+    );
+    expect(finalLiquidations.result).toBeUint(1);
+  });
+
+  it("prevents liquidating healthy positions", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+    const wallet_2 = accounts.get("wallet_2")!;
+
+    // wallet_1 deposits 2000, borrows 1000
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(2000)],
+      wallet_1
+    );
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(1000), Cl.uint(5), Cl.uint(30)],
+      wallet_1
+    );
+
+    // Price is u100 (healthy: 200% collateralized)
+    const liquidationAttempt = simnet.callPublicFn(
+      "vault-core",
+      "liquidate",
+      [Cl.principal(wallet_1), Cl.uint(100)],
+      wallet_2
+    );
+
+    // Verify transaction fails with err-not-liquidatable (u107)
+    expect(liquidationAttempt.result).toBeErr(Cl.uint(107));
+  });
+
+  it("prevents self-liquidation", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+
+    // wallet_1 deposits 1500, borrows 1000
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(1500)],
+      wallet_1
+    );
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(1000), Cl.uint(5), Cl.uint(30)],
+      wallet_1
+    );
+
+    // Price drops to u70 (liquidatable)
+    const selfLiquidationAttempt = simnet.callPublicFn(
+      "vault-core",
+      "liquidate",
+      [Cl.principal(wallet_1), Cl.uint(70)],
+      wallet_1
+    );
+
+    // Verify transaction fails with err-liquidate-own-loan (u108)
+    expect(selfLiquidationAttempt.result).toBeErr(Cl.uint(108));
+  });
+});
