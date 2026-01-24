@@ -14,7 +14,7 @@
 
 ;; Data maps
 (define-map user-deposits principal uint)
-(define-map user-loans principal { amount: uint, interest-rate: uint, term-end: uint })
+(define-map user-loans principal { amount: uint, interest-rate: uint, start-block: uint, term-end: uint })
 (define-data-var total-deposits uint u0)
 (define-data-var total-repaid uint u0)
 
@@ -57,10 +57,7 @@
   (match (map-get? user-loans user)
     loan
       (let (
-        (term-blocks (* (get interest-rate loan) u144))
-        (blocks-elapsed (if (> block-height (get term-end loan))
-                          (- (get term-end loan) (- (get term-end loan) term-blocks))
-                          (- block-height (- (get term-end loan) term-blocks))))
+        (blocks-elapsed (- block-height (get start-block loan)))
         (interest (calculate-interest (get amount loan) (get interest-rate loan) blocks-elapsed))
         (total (+ (get amount loan) interest))
       )
@@ -115,6 +112,7 @@
     (map-set user-loans tx-sender {
       amount: amount,
       interest-rate: interest-rate,
+      start-block: block-height,
       term-end: term-end
     })
     
@@ -127,9 +125,7 @@
   (let (
     (loan (unwrap! (map-get? user-loans tx-sender) ERR-NO-ACTIVE-LOAN))
     (loan-amount (get amount loan))
-    (term-blocks (* (get interest-rate loan) u144))
-    (loan-start (- (get term-end loan) term-blocks))
-    (blocks-elapsed (- block-height loan-start))
+    (blocks-elapsed (- block-height (get start-block loan)))
     (interest (calculate-interest loan-amount (get interest-rate loan) blocks-elapsed))
     (total-repayment (+ loan-amount interest))
   )

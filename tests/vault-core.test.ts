@@ -170,6 +170,7 @@ describe("loan management", () => {
       Cl.tuple({
         amount: Cl.uint(borrowAmount),
         "interest-rate": Cl.uint(interestRate),
+        "start-block": Cl.uint(startBlock + 1),
         "term-end": Cl.uint(startBlock + 1 + termDays * 144),
       })
     );
@@ -302,8 +303,229 @@ describe("loan management", () => {
       Cl.tuple({
         amount: Cl.uint(1000),
         "interest-rate": Cl.uint(5),
+        "start-block": Cl.uint(startBlock + 1),
         "term-end": Cl.uint(expectedTermEnd),
       })
     );
+  });
+});
+
+describe("loan repayment", () => {
+  it("allows users to repay their loan with interest", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+
+    // wallet_1 deposits 2000 STX
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(2000)],
+      wallet_1
+    );
+
+    // wallet_1 borrows 1000 STX at 10% for 30 days
+    const borrowAmount = 1000;
+    const interestRate = 10;
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(borrowAmount), Cl.uint(interestRate), Cl.uint(30)],
+      wallet_1
+    );
+
+    // Mine 1000 blocks (simulate time passing)
+    simnet.mineEmptyBlocks(1000);
+
+    // wallet_1 repays loan
+    const repayResponse = simnet.callPublicFn(
+      "vault-core",
+      "repay",
+      [],
+      wallet_1
+    );
+
+    // Verify repay succeeds and returns repayment details
+    expect(repayResponse.result).toBeOk(
+      Cl.tuple({
+        principal: Cl.uint(borrowAmount),
+        interest: Cl.uint(1),  // Small interest from 1001 blocks
+        total: Cl.uint(1001),  // principal + interest
+      })
+    );
+
+    // User no longer has active loan
+    const loanCheck = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-user-loan",
+      [Cl.principal(wallet_1)],
+      wallet_1
+    );
+    expect(loanCheck.result).toBeNone();
+  });
+
+  it("prevents repaying when no active loan exists", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+
+    // wallet_1 has no loan, tries to repay
+    const repayResponse = simnet.callPublicFn(
+      "vault-core",
+      "repay",
+      [],
+      wallet_1
+    );
+
+    // Verify transaction fails with error u106 (err-no-active-loan)
+    expect(repayResponse.result).toBeErr(Cl.uint(106));
+  });
+
+  it("correctly calculates repayment amount", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+
+    // wallet_1 deposits 2000 and borrows 1000 at 12% for 90 days
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(2000)],
+      wallet_1
+    );
+
+    const borrowAmount = 1000;
+    const interestRate = 12;
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(borrowAmount), Cl.uint(interestRate), Cl.uint(90)],
+      wallet_1
+    );
+
+    // Call get-repayment-amount immediately after borrowing
+    const initialRepayment = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-repayment-amount",
+      [Cl.principal(wallet_1)],
+      wallet_1
+    );
+
+    // Should return some (loan exists) with minimal interest
+    expect(initialRepayment.result).toBeSome(
+      Cl.tuple({
+        principal: Cl.uint(borrowAmount),
+        interest: Cl.uint(0),  // No blocks elapsed yet
+        total: Cl.uint(borrowAmount),
+      })
+    );
+
+    // Mine 4320 blocks (30 days worth of blocks: 30 * 144)
+    simnet.mineEmptyBlocks(4320);
+
+    // Call get-repayment-amount again after time has passed
+    const laterRepayment = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-repayment-amount",
+      [Cl.principal(wallet_1)],
+      wallet_1
+    );
+
+    // Should return some with accumulated interest
+    // Expected interest: (1000 * 12 * 4320) / (100 * 52560) = 9.86 ≈ 9
+    expect(laterRepayment.result).toBeSome(
+      Cl.tuple({
+        principal: Cl.uint(borrowAmount),
+        interest: Cl.uint(9),
+        total: Cl.uint(1009),
+      })
+    );
+  });
+
+  it("tracks total repaid across multiple loans", () => {
+    const accounts = simnet.getAccounts();
+    const wallet_1 = accounts.get("wallet_1")!;
+    const wallet_2 = accounts.get("wallet_2")!;
+
+    // Check initial total repaid is 0
+    const initialTotal = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-total-repaid",
+      [],
+      wallet_1
+    );
+    expect(initialTotal.result).toBeUint(0);
+
+    // wallet_1 deposits 2000, borrows 1000
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(2000)],
+      wallet_1
+    );
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(1000), Cl.uint(10), Cl.uint(30)],
+      wallet_1
+    );
+
+    // Mine some blocks for interest
+    simnet.mineEmptyBlocks(500);
+
+    // wallet_1 repays
+    const repay1 = simnet.callPublicFn(
+      "vault-core",
+      "repay",
+      [],
+      wallet_1
+    );
+    expect(repay1.result).toBeOk(expect.any(Object));
+
+    // Check total repaid increased
+    const afterFirstRepay = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-total-repaid",
+      [],
+      wallet_1
+    );
+    const firstRepayAmount = afterFirstRepay.result;
+    
+    // Should be greater than 0
+    expect(firstRepayAmount).not.toBeUint(0);
+
+    // wallet_2 deposits 3000, borrows 1500
+    simnet.callPublicFn(
+      "vault-core",
+      "deposit",
+      [Cl.uint(3000)],
+      wallet_2
+    );
+    simnet.callPublicFn(
+      "vault-core",
+      "borrow",
+      [Cl.uint(1500), Cl.uint(8), Cl.uint(60)],
+      wallet_2
+    );
+
+    // Mine some blocks for interest
+    simnet.mineEmptyBlocks(1000);
+
+    // wallet_2 repays
+    const repay2 = simnet.callPublicFn(
+      "vault-core",
+      "repay",
+      [],
+      wallet_2
+    );
+    expect(repay2.result).toBeOk(expect.any(Object));
+
+    // Verify get-total-repaid increased
+    const finalTotal = simnet.callReadOnlyFn(
+      "vault-core",
+      "get-total-repaid",
+      [],
+      wallet_2
+    );
+    
+    // Final total should be greater than first repay amount
+    expect(finalTotal.result).not.toEqual(firstRepayAmount);
   });
 });
