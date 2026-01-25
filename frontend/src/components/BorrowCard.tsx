@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useVault } from '../hooks/useVault';
-import { formatSTX, calculateRequiredCollateral, LOAN_TERMS } from '../types/vault';
+import { formatSTX, LOAN_TERMS } from '../types/vault';
 import { PROTOCOL_CONSTANTS } from '../config/contracts';
 
 /**
