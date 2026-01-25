@@ -358,6 +358,51 @@
   (- block-height (var-get last-activity-block))
 )
 
+;; Get comprehensive user position summary
+;; @param user: Principal address of the user
+;; @param stx-price: Current STX price for health factor calculation
+;; @returns Summary of user's deposits, loan, health factor, and borrowing capacity
+(define-read-only (get-user-position-summary (user principal) (stx-price uint))
+  (let (
+    (deposit-amount (default-to u0 (map-get? user-deposits user)))
+    (loan-data (map-get? user-loans user))
+    (max-borrow (get-max-borrow-amount user))
+  )
+    {
+      deposit-amount: deposit-amount,
+      has-loan: (is-some loan-data),
+      loan-amount: (match loan-data
+        loan-info (get amount loan-info)
+        u0
+      ),
+      loan-interest-rate: (match loan-data
+        loan-info (get interest-rate loan-info)
+        u0
+      ),
+      loan-term-end: (match loan-data
+        loan-info (get term-end loan-info)
+        u0
+      ),
+      health-factor: (match loan-data
+        loan-info (calculate-health-factor user stx-price)
+        u200 ;; No loan = 200% health (max safe)
+      ),
+      is-liquidatable: (match loan-data
+        loan-info (is-liquidatable user stx-price)
+        false
+      ),
+      max-borrow-available: max-borrow,
+      collateral-usage-percent: (if (> deposit-amount u0)
+        (match loan-data
+          loan-info (/ (* (get amount loan-info) u100) deposit-amount)
+          u0
+        )
+        u0
+      )
+    }
+  )
+)
+
 ;; Initialization function (can only be called once by contract owner)
 (define-public (initialize)
   (begin
