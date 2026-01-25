@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, DollarSign, TrendingDown, Zap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { useVault } from '../hooks/useVault';
 import { formatSTX, formatAddress } from '../utils/formatters';
 import { PROTOCOL_CONSTANTS } from '../config/contracts';
 
@@ -22,8 +21,7 @@ interface LiquidatablePosition {
  * Displays positions at risk of liquidation and allows liquidation
  */
 export const LiquidationList: React.FC = () => {
-  const { address, userSession } = useAuth();
-  const vault = useVault(userSession, address);
+  const { address } = useAuth();
 
   const [positions, setPositions] = useState<LiquidatablePosition[]>([]);
   const [isLoading, setIsLoading] = useState(false);

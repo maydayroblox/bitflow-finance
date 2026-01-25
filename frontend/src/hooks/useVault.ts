@@ -338,7 +338,7 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
   /**
    * Calculate health factor
    */
-  const getHealthFactor = useCallback(async (stxPriceUSD: number): Promise<number | null> => {
+  const getHealthFactor = useCallback(async (stxPriceUSD: number): Promise<{ healthFactorPercent: number; collateralValueUSD: number; debtValueUSD: number } | null> => {
     if (!userAddress) return null;
 
     try {
@@ -358,7 +358,35 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
       });
 
       if (result.type === ClarityType.OptionalSome && result.value.type === ClarityType.UInt) {
-        return Number(result.value.value);
+        const healthFactorPercent = Number(result.value.value);
+        
+        // Get loan data for USD values - call the function directly
+        const loanResult = await callReadOnlyFunction({
+          network,
+          contractAddress,
+          contractName,
+          functionName: 'get-user-loan',
+          functionArgs: [principalCV(userAddress)],
+          senderAddress: userAddress,
+        });
+        
+        let collateralValueUSD = 0;
+        let debtValueUSD = 0;
+        
+        if (loanResult.type === ClarityType.OptionalSome) {
+          const loanData = cvToValue(loanResult.value);
+          const amountSTX = microStxToStx(BigInt(loanData.amount));
+          const collateralAmountSTX = microStxToStx((BigInt(loanData.amount) * BigInt(PROTOCOL_CONSTANTS.MIN_COLLATERAL_RATIO)) / BigInt(100));
+          
+          collateralValueUSD = collateralAmountSTX * stxPriceUSD;
+          debtValueUSD = amountSTX * stxPriceUSD;
+        }
+        
+        return {
+          healthFactorPercent,
+          collateralValueUSD,
+          debtValueUSD,
+        };
       }
 
       return null;
