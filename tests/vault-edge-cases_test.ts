@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Cl } from '@stacks/transactions';
 
-const accounts = simnet.getAccounts();
-const deployer = accounts.get('deployer')!;
-const wallet1 = accounts.get('wallet_1')!;
-const wallet2 = accounts.get('wallet_2')!;
-const wallet3 = accounts.get('wallet_3')!;
-
 describe('Vault Edge Cases - Boundary Conditions', () => {
+  const accounts = simnet.getAccounts();
+  const deployer = accounts.get('deployer')!;
+  const wallet1 = accounts.get('wallet_1')!;
+  const wallet2 = accounts.get('wallet_2')!;
+  const wallet3 = accounts.get('wallet_3')!;
   describe('Minimum Collateral Borrowing', () => {
     it('should allow borrowing with exactly minimum collateral (150%)', () => {
       // Deposit exactly enough for minimum collateral ratio
@@ -34,7 +33,12 @@ describe('Vault Edge Cases - Boundary Conditions', () => {
       
       // Verify loan was created
       const loan = simnet.getMapEntry('vault-core', 'user-loans', Cl.principal(wallet1));
-      expect(loan).toBeSome();
+      expect(loan).toBeSome(Cl.tuple({
+        amount: Cl.uint(borrowAmount),
+        'interest-rate': Cl.uint(10),
+        'start-block': Cl.uint(expect.any(Number)),
+        'term-end': Cl.uint(expect.any(Number))
+      }));
     });
 
     it('should reject borrowing with insufficient collateral (149.9%)', () => {
@@ -360,7 +364,12 @@ describe('Vault Edge Cases - Boundary Conditions', () => {
         'user-loans',
         Cl.principal(wallet2)
       );
-      expect(loan2).toBeSome();
+      expect(loan2).toBeSome(Cl.tuple({
+        amount: Cl.uint(20000000),
+        'interest-rate': Cl.uint(15),
+        'start-block': Cl.uint(expect.any(Number)),
+        'term-end': Cl.uint(expect.any(Number))
+      }));
     });
 
     it('should track comprehensive position summary for all users', () => {
