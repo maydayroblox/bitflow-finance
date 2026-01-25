@@ -156,12 +156,22 @@
 ;; Public functions
 
 ;; Deposit STX into the vault
+;; @param amount: Amount of STX (in micro-STX) to deposit
+;; @returns (ok true) on success
+;; Transfers STX from caller to contract and updates user's deposit balance
 (define-public (deposit (amount uint))
   (begin
+    ;; Validate amount is greater than zero
     (asserts! (> amount u0) ERR-INVALID-AMOUNT)
+    
+    ;; Transfer STX from user to contract
     (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    
+    ;; Update user's deposit balance
     (map-set user-deposits tx-sender 
       (+ (default-to u0 (map-get? user-deposits tx-sender)) amount))
+    
+    ;; Update total deposits
     (var-set total-deposits (+ (var-get total-deposits) amount))
     
     ;; Update analytics
@@ -174,14 +184,24 @@
 )
 
 ;; Withdraw STX from the vault
+;; @param amount: Amount of STX (in micro-STX) to withdraw
+;; @returns (ok true) on success
+;; Note: Can only withdraw if not used as collateral for active loan
 (define-public (withdraw (amount uint))
   (let (
     (user-balance (default-to u0 (map-get? user-deposits tx-sender)))
     (recipient tx-sender)
   )
+    ;; Verify user has sufficient balance
     (asserts! (>= user-balance amount) ERR-INSUFFICIENT-BALANCE)
+    
+    ;; Transfer STX from contract to user
     (try! (as-contract (stx-transfer? amount tx-sender recipient)))
+    
+    ;; Update user's deposit balance
     (map-set user-deposits recipient (- user-balance amount))
+    
+    ;; Update total deposits
     (var-set total-deposits (- (var-get total-deposits) amount))
     
     ;; Update analytics
@@ -193,16 +213,21 @@
 )
 
 ;; Borrow against deposited collateral
+;; @param amount: Amount of STX to borrow
+;; @param interest-rate: Annual interest rate in basis points (e.g., 10 = 0.1%)
+;; @param term-days: Loan term in days
+;; @returns (ok true) on success
+;; Requires 150% collateralization ratio (user must have 1.5x borrow amount deposited)
 (define-public (borrow (amount uint) (interest-rate uint) (term-days uint))
   (let (
     (user-balance (default-to u0 (map-get? user-deposits tx-sender)))
     (required-collateral (calculate-required-collateral amount))
-    (term-end (+ block-height (* term-days u144)))
+    (term-end (+ block-height (* term-days u144))) ;; ~144 blocks per day
   )
-    ;; Check user doesn't already have an active loan
+    ;; Verify user doesn't already have an active loan (one loan per user)
     (asserts! (is-none (map-get? user-loans tx-sender)) ERR-ALREADY-HAS-LOAN)
     
-    ;; Verify user has enough deposited collateral
+    ;; Verify user has enough deposited collateral (150% ratio)
     (asserts! (>= user-balance required-collateral) ERR-INSUFFICIENT-COLLATERAL)
     
     ;; Store loan details
@@ -223,6 +248,8 @@
 )
 
 ;; Repay an active loan
+;; @returns (ok { principal, interest, total }) with repayment details
+;; Calculates accrued interest based on blocks elapsed and repays full amount
 (define-public (repay)
   (let (
     (loan (unwrap! (map-get? user-loans tx-sender) ERR-NO-ACTIVE-LOAN))
@@ -231,10 +258,10 @@
     (interest (calculate-interest loan-amount (get interest-rate loan) blocks-elapsed))
     (total-repayment (+ loan-amount interest))
   )
-    ;; Transfer repayment from user to contract
+    ;; Transfer total repayment (principal + interest) from user to contract
     (try! (stx-transfer? total-repayment tx-sender (as-contract tx-sender)))
     
-    ;; Delete the loan
+    ;; Remove the loan from user's record
     (map-delete user-loans tx-sender)
     
     ;; Update total repaid
@@ -251,18 +278,23 @@
 )
 
 ;; Liquidate an undercollateralized loan
+;; @param borrower: Address of the borrower to liquidate
+;; @param stx-price: Current STX price (used for health factor calculation)
+;; @returns (ok { loan-amount, bonus, total-paid }) on success
+;; Liquidator pays loan + 5% bonus and receives borrower's collateral
+;; Only works if health factor < 110%
 (define-public (liquidate (borrower principal) (stx-price uint))
   (let (
     (loan (unwrap! (map-get? user-loans borrower) ERR-NO-ACTIVE-LOAN))
     (borrower-deposit (default-to u0 (map-get? user-deposits borrower)))
     (loan-amount (get amount loan))
-    (liquidation-bonus (/ (* loan-amount u5) u100))
+    (liquidation-bonus (/ (* loan-amount u5) u100)) ;; 5% bonus for liquidator
     (total-to-pay (+ loan-amount liquidation-bonus))
   )
-    ;; Assert caller is not the borrower
+    ;; Prevent self-liquidation
     (asserts! (not (is-eq tx-sender borrower)) ERR-LIQUIDATE-OWN-LOAN)
     
-    ;; Assert borrower is liquidatable
+    ;; Verify health factor is below 110% threshold
     (asserts! (is-liquidatable borrower stx-price) ERR-NOT-LIQUIDATABLE)
     
     ;; Transfer payment from liquidator to contract
