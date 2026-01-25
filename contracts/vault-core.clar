@@ -59,6 +59,11 @@
 
 ;; Read-only functions
 
+;; Get contract version
+(define-read-only (get-contract-version)
+  "1.0.0"
+)
+
 ;; Get user's deposit balance
 (define-read-only (get-user-deposit (user principal))
   (default-to u0 (map-get? user-deposits user))
