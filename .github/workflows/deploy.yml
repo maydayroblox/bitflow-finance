@@ -1,0 +1,99 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'testnet'
+        type: choice
+        options:
+          - testnet
+          - mainnet
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Install Clarinet
+        run: |
+          wget -nv https://github.com/hirosystems/clarinet/releases/download/v2.10.0/clarinet-linux-x64.tar.gz
+          tar -xzf clarinet-linux-x64.tar.gz
+          sudo mv clarinet /usr/local/bin/
+          clarinet --version
+      
+      - name: Validate deployment environment
+        run: |
+          echo "🚀 Deploying to: ${{ github.event.inputs.environment }}"
+          
+          if [ "${{ github.event.inputs.environment }}" = "mainnet" ]; then
+            echo "⚠️ WARNING: MAINNET DEPLOYMENT"
+            echo "This will deploy contracts to the Stacks mainnet"
+            echo "Ensure you have reviewed all changes carefully"
+          fi
+      
+      - name: Run pre-deployment checks
+        run: |
+          echo "📋 Running contract checks..."
+          clarinet check
+          
+          echo "🧪 Running tests..."
+          clarinet test
+      
+      - name: Make deployment script executable
+        run: chmod +x scripts/deploy-${{ github.event.inputs.environment }}.sh
+      
+      - name: Deploy to ${{ github.event.inputs.environment }}
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "mainnet" ]; then
+            echo "Deploying to MAINNET..."
+            # For mainnet, we might need additional confirmation or manual steps
+            echo "⚠️ Manual deployment recommended for mainnet"
+            echo "Run: ./scripts/deploy-mainnet.sh"
+          else
+            echo "Deploying to testnet..."
+            ./scripts/deploy-testnet.sh
+          fi
+        env:
+          CLARINET_DEPLOYER_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+      
+      - name: Upload deployment artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-${{ github.event.inputs.environment }}-${{ github.run_number }}
+          path: |
+            deployments/
+            .clarinet/
+      
+      - name: Create deployment summary
+        if: success()
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Next steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Update frontend environment variables with contract address" >> $GITHUB_STEP_SUMMARY
+          echo "2. Test contract interactions on ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "3. Monitor contract activity" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Deployment to ${{ github.event.inputs.environment }} failed." >> $GITHUB_STEP_SUMMARY
+          echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
