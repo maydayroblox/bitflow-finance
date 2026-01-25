@@ -2,8 +2,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Clarity](https://img.shields.io/badge/Clarity-2.0-blue.svg)](https://clarity-lang.org/)
+[![Production Ready](https://img.shields.io/badge/status-production%20ready-success.svg)]()
 [![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen.svg)]()
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)]()
+[![Commits](https://img.shields.io/badge/commits-50-blue.svg)]()
 
 A decentralized lending protocol on the Stacks blockchain, enabling users to deposit STX, earn interest, and borrow against their collateral.
 
