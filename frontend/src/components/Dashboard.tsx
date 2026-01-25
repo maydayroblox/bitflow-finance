@@ -1,0 +1,262 @@
+import React, { useState, useEffect } from 'react';
+import { TrendingUp, DollarSign, Activity, Users } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
+import { useVault } from '../hooks/useVault';
+import { StatsCard } from './StatsCard';
+import { WalletConnect } from './WalletConnect';
+import { DepositCard } from './DepositCard';
+import { BorrowCard } from './BorrowCard';
+import { RepayCard } from './RepayCard';
+import { HealthMonitor } from './HealthMonitor';
+import { formatSTX } from '../utils/formatters';
+
+/**
+ * Dashboard Component
+ * Main dashboard layout with protocol stats and user portfolio
+ */
+export const Dashboard: React.FC = () => {
+  const { address, balance, userSession } = useAuth();
+  const vault = useVault(userSession, address);
+
+  // Protocol stats
+  const [totalValueLocked, setTotalValueLocked] = useState(0);
+  const [totalBorrowed, setTotalBorrowed] = useState(0);
+  const [totalRepaid, setTotalRepaid] = useState(0);
+  const [activeUsers, setActiveUsers] = useState(0);
+
+  // User portfolio
+  const [userDeposit, setUserDeposit] = useState(0);
+  const [userLoan, setUserLoan] = useState<any>(null);
+  const [userHealthFactor, setUserHealthFactor] = useState<number | null>(null);
+
+  // Fetch protocol stats
+  useEffect(() => {
+    const fetchProtocolStats = async () => {
+      // In a real implementation, these would come from read-only contract calls
+      // For now, using placeholder values
+      setTotalValueLocked(125000);
+      setTotalBorrowed(45000);
+      setTotalRepaid(12000);
+      setActiveUsers(156);
+    };
+
+    fetchProtocolStats();
+    const interval = setInterval(fetchProtocolStats, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch user portfolio data
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (address) {
+        const deposit = await vault.getUserDeposit();
+        if (deposit) {
+          setUserDeposit(deposit.amountSTX);
+        }
+
+        const loan = await vault.getUserLoan();
+        setUserLoan(loan);
+
+        if (loan) {
+          const health = await vault.getHealthFactor(1.5);
+          if (health) {
+            setUserHealthFactor(health.healthFactorPercent);
+          }
+        }
+      }
+    };
+
+    fetchUserData();
+    const interval = setInterval(fetchUserData, 15000);
+    return () => clearInterval(interval);
+  }, [address, vault]);
+
+  // Calculate utilization rate
+  const utilizationRate = totalValueLocked > 0 
+    ? (totalBorrowed / totalValueLocked) * 100 
+    : 0;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
+                <TrendingUp className="text-white" size={24} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">BitFlow Finance</h1>
+                <p className="text-sm text-gray-500">Decentralized Lending Protocol</p>
+              </div>
+            </div>
+            <WalletConnect />
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Protocol Stats */}
+        <section className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Protocol Overview</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatsCard
+              icon={<DollarSign size={24} />}
+              label="Total Value Locked"
+              value={formatSTX(totalValueLocked) + ' STX'}
+              trend={{ value: 12.5, isPositive: true }}
+              color="blue"
+            />
+            <StatsCard
+              icon={<TrendingUp size={24} />}
+              label="Total Borrowed"
+              value={formatSTX(totalBorrowed) + ' STX'}
+              trend={{ value: 8.3, isPositive: true }}
+              color="green"
+            />
+            <StatsCard
+              icon={<Activity size={24} />}
+              label="Utilization Rate"
+              value={utilizationRate.toFixed(1) + '%'}
+              trend={{ value: 2.1, isPositive: false }}
+              color="purple"
+            />
+            <StatsCard
+              icon={<Users size={24} />}
+              label="Active Users"
+              value={activeUsers.toString()}
+              trend={{ value: 15, isPositive: true }}
+              color="orange"
+            />
+          </div>
+        </section>
+
+        {/* User Portfolio */}
+        {address && (
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Portfolio</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="text-sm text-gray-500 mb-2">Total Deposited</div>
+                <div className="text-3xl font-bold text-gray-900 mb-1">
+                  {formatSTX(userDeposit)} STX
+                </div>
+                <div className="text-sm text-gray-600">
+                  ≈ ${(userDeposit * 1.5).toLocaleString()} USD
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="text-sm text-gray-500 mb-2">Active Loan</div>
+                <div className="text-3xl font-bold text-gray-900 mb-1">
+                  {userLoan ? formatSTX(userLoan.amountSTX) : '0.00'} STX
+                </div>
+                <div className="text-sm text-gray-600">
+                  {userLoan 
+                    ? `${userLoan.interestRatePercent}% APR` 
+                    : 'No active loan'}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="text-sm text-gray-500 mb-2">Health Factor</div>
+                <div className={`text-3xl font-bold mb-1 ${
+                  !userLoan ? 'text-gray-400' :
+                  userHealthFactor && userHealthFactor >= 150 ? 'text-green-600' :
+                  userHealthFactor && userHealthFactor >= 110 ? 'text-yellow-600' : 'text-red-600'
+                }`}>
+                  {userHealthFactor ? userHealthFactor.toFixed(0) + '%' : 'N/A'}
+                </div>
+                <div className="text-sm text-gray-600">
+                  {!userLoan ? 'No active loan' :
+                   userHealthFactor && userHealthFactor >= 150 ? 'Healthy' :
+                   userHealthFactor && userHealthFactor >= 110 ? 'At Risk' : 'Critical'}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Action Cards */}
+        {!address ? (
+          <section className="mb-8">
+            <div className="bg-white rounded-xl shadow-lg p-12 text-center">
+              <Activity className="mx-auto text-gray-400 mb-4" size={64} />
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                Welcome to BitFlow Finance
+              </h3>
+              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                Connect your wallet to start depositing, borrowing, and earning with your STX tokens.
+              </p>
+              <WalletConnect />
+            </div>
+          </section>
+        ) : (
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Actions</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column */}
+              <div className="space-y-6">
+                <DepositCard />
+                <BorrowCard />
+              </div>
+
+              {/* Right Column */}
+              <div className="space-y-6">
+                <RepayCard />
+                <HealthMonitor />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Quick Stats Footer */}
+        <section>
+          <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <div className="text-sm opacity-90 mb-1">Your Wallet Balance</div>
+                <div className="text-2xl font-bold">
+                  {address ? formatSTX(balance) : '0.00'} STX
+                </div>
+              </div>
+              <div>
+                <div className="text-sm opacity-90 mb-1">Total Repaid (Protocol)</div>
+                <div className="text-2xl font-bold">
+                  {formatSTX(totalRepaid)} STX
+                </div>
+              </div>
+              <div>
+                <div className="text-sm opacity-90 mb-1">Network</div>
+                <div className="text-2xl font-bold">
+                  Stacks Testnet
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 mt-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="text-sm text-gray-500">
+              © 2026 BitFlow Finance. Built on Stacks.
+            </div>
+            <div className="flex gap-6">
+              <a href="#" className="text-sm text-gray-600 hover:text-gray-900">Docs</a>
+              <a href="#" className="text-sm text-gray-600 hover:text-gray-900">GitHub</a>
+              <a href="#" className="text-sm text-gray-600 hover:text-gray-900">Discord</a>
+              <a href="#" className="text-sm text-gray-600 hover:text-gray-900">Twitter</a>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default Dashboard;
