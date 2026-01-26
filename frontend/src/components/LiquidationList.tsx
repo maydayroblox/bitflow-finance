@@ -72,8 +72,9 @@ export const LiquidationList: React.FC = () => {
     };
 
     fetchPositions();
-    const interval = setInterval(fetchPositions, 15000);
-    return () => clearInterval(interval);
+    // Auto-refresh disabled to prevent rate limiting
+    // const interval = setInterval(fetchPositions, 120000);
+    // return () => clearInterval(interval);
   }, []);
 
   const handleLiquidate = async (position: LiquidatablePosition) => {
