@@ -6,6 +6,10 @@ import {
   principalCV,
   ClarityType,
   cvToValue,
+  PostConditionMode,
+  Pc,
+  FungibleConditionCode,
+  makeStandardSTXPostCondition,
 } from '@stacks/transactions';
 import { 
   UserDeposit, 
@@ -20,8 +24,43 @@ import {
   getContractAddress, 
   VAULT_CONTRACT,
   PROTOCOL_CONSTANTS,
+  getApiEndpoint,
 } from '../config/contracts';
 import { UserSession } from '@stacks/connect';
+
+/**
+ * Poll transaction status until confirmed or failed
+ */
+const pollTransactionStatus = async (txId: string, maxAttempts = 30): Promise<boolean> => {
+  const apiUrl = getApiEndpoint();
+  
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const response = await fetch(`${apiUrl}/extended/v1/tx/${txId}`);
+      const data = await response.json();
+      
+      console.log(`Transaction status (attempt ${i + 1}):`, data.tx_status);
+      
+      if (data.tx_status === 'success') {
+        return true;
+      }
+      
+      if (data.tx_status === 'abort_by_response' || data.tx_status === 'abort_by_post_condition') {
+        console.error('Transaction failed:', data.tx_result);
+        return false;
+      }
+      
+      // Wait 3 seconds before next check
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    } catch (err) {
+      console.error('Error checking transaction status:', err);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
+  
+  // Timeout - transaction might still be pending
+  return false;
+};
 
 /**
  * Custom hook for vault operations
@@ -49,23 +88,36 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
     try {
       const amountMicroSTX = stxToMicroStx(amountSTX);
 
-      await openContractCall({
-        network,
-        contractAddress,
-        contractName,
-        functionName: 'deposit',
-        functionArgs: [uintCV(amountMicroSTX)],
-        postConditions: [],
-        onFinish: (data: any) => {
-          console.log('Deposit transaction:', data.txId);
-        },
-        onCancel: () => {
-          console.log('Deposit cancelled');
-        },
-      });
+      // Create post-condition: user must transfer exact amount of STX
+      const postConditions = [
+        makeStandardSTXPostCondition(
+          userAddress,
+          FungibleConditionCode.Equal,
+          amountMicroSTX
+        ),
+      ];
 
-      setIsLoading(false);
-      return { success: true, txId: 'pending' };
+      return new Promise((resolve) => {
+        openContractCall({
+          network,
+          contractAddress,
+          contractName,
+          functionName: 'deposit',
+          functionArgs: [uintCV(amountMicroSTX)],
+          postConditions,
+          postConditionMode: PostConditionMode.Deny,
+          onFinish: (data: any) => {
+            console.log('Deposit transaction submitted:', data.txId);
+            setIsLoading(false);
+            resolve({ success: true, txId: data.txId });
+          },
+          onCancel: () => {
+            console.log('Deposit cancelled');
+            setIsLoading(false);
+            resolve({ success: false, error: 'Transaction cancelled by user' });
+          },
+        });
+      });
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to deposit';
       setError(errorMsg);
@@ -88,23 +140,27 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
     try {
       const amountMicroSTX = stxToMicroStx(amountSTX);
 
-      await openContractCall({
-        network,
-        contractAddress,
-        contractName,
-        functionName: 'withdraw',
-        functionArgs: [uintCV(amountMicroSTX)],
-        postConditions: [],
-        onFinish: (data: any) => {
-          console.log('Withdrawal transaction:', data.txId);
-        },
-        onCancel: () => {
-          console.log('Withdrawal cancelled');
-        },
+      return new Promise((resolve) => {
+        openContractCall({
+          network,
+          contractAddress,
+          contractName,
+          functionName: 'withdraw',
+          functionArgs: [uintCV(amountMicroSTX)],
+          postConditions: [],
+          postConditionMode: PostConditionMode.Deny,
+          onFinish: (data: any) => {
+            console.log('Withdrawal transaction submitted:', data.txId);
+            setIsLoading(false);
+            resolve({ success: true, txId: data.txId });
+          },
+          onCancel: () => {
+            console.log('Withdrawal cancelled');
+            setIsLoading(false);
+            resolve({ success: false, error: 'Transaction cancelled by user' });
+          },
+        });
       });
-
-      setIsLoading(false);
-      return { success: true, txId: 'pending' };
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to withdraw';
       setError(errorMsg);
@@ -132,27 +188,31 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
       const amountMicroSTX = stxToMicroStx(amountSTX);
       const interestRateBPS = interestRatePercent * 100; // Convert to basis points
 
-      await openContractCall({
-        network,
-        contractAddress,
-        contractName,
-        functionName: 'borrow',
-        functionArgs: [
-          uintCV(amountMicroSTX),
-          uintCV(interestRateBPS),
-          uintCV(termDays),
-        ],
-        postConditions: [],
-        onFinish: (data: any) => {
-          console.log('Borrow transaction:', data.txId);
-        },
-        onCancel: () => {
-          console.log('Borrow cancelled');
-        },
+      return new Promise((resolve) => {
+        openContractCall({
+          network,
+          contractAddress,
+          contractName,
+          functionName: 'borrow',
+          functionArgs: [
+            uintCV(amountMicroSTX),
+            uintCV(interestRateBPS),
+            uintCV(termDays),
+          ],
+          postConditions: [],
+          postConditionMode: PostConditionMode.Deny,
+          onFinish: (data: any) => {
+            console.log('Borrow transaction submitted:', data.txId);
+            setIsLoading(false);
+            resolve({ success: true, txId: data.txId });
+          },
+          onCancel: () => {
+            console.log('Borrow cancelled');
+            setIsLoading(false);
+            resolve({ success: false, error: 'Transaction cancelled by user' });
+          },
+        });
       });
-
-      setIsLoading(false);
-      return { success: true, txId: 'pending' };
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to borrow';
       setError(errorMsg);
@@ -173,23 +233,27 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
     setError(null);
 
     try {
-      await openContractCall({
-        network,
-        contractAddress,
-        contractName,
-        functionName: 'repay',
-        functionArgs: [],
-        postConditions: [],
-        onFinish: (data: any) => {
-          console.log('Repayment transaction:', data.txId);
-        },
-        onCancel: () => {
-          console.log('Repayment cancelled');
-        },
+      return new Promise((resolve) => {
+        openContractCall({
+          network,
+          contractAddress,
+          contractName,
+          functionName: 'repay',
+          functionArgs: [],
+          postConditions: [],
+          postConditionMode: PostConditionMode.Deny,
+          onFinish: (data: any) => {
+            console.log('Repayment transaction submitted:', data.txId);
+            setIsLoading(false);
+            resolve({ success: true, txId: data.txId });
+          },
+          onCancel: () => {
+            console.log('Repayment cancelled');
+            setIsLoading(false);
+            resolve({ success: false, error: 'Transaction cancelled by user' });
+          },
+        });
       });
-
-      setIsLoading(false);
-      return { success: true, txId: 'pending' };
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to repay';
       setError(errorMsg);
@@ -254,8 +318,12 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
         senderAddress: userAddress,
       });
 
+      console.log('getUserLoan raw result:', result);
+      console.log('Result type:', result.type, 'Expected:', ClarityType.OptionalSome);
+
       if (result.type === ClarityType.OptionalSome) {
         const loanData = cvToValue(result.value);
+        console.log('Loan data:', loanData);
         
         const amount = BigInt(loanData.amount);
         const interestRate = Number(loanData['interest-rate']);
@@ -271,8 +339,9 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
         const collateralAmountSTX = microStxToStx(collateralAmount);
 
         // Estimate start timestamp (blocks are ~10 minutes apart)
-        const currentBlock = startBlock + Math.floor((Date.now() / 1000 - Date.now() / 1000) / 600);
-        const startTimestamp = Date.now() / 1000 - ((currentBlock - startBlock) * 600);
+        // This is an approximation - in production you'd use block height API
+        const blocksElapsed = 0; // For now, assume loan just started
+        const startTimestamp = Date.now() / 1000 - (blocksElapsed * 600);
 
         return {
           amount,
@@ -288,6 +357,7 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
         };
       }
 
+      console.log('getUserLoan returning null - result type was:', result.type);
       return null;
     } catch (err) {
       console.error('Error fetching user loan:', err);
@@ -412,6 +482,9 @@ export const useVault = (_userSession: UserSession, userAddress: string | null) 
     getUserLoan,
     getRepaymentAmount,
     getHealthFactor,
+    
+    // Utilities
+    pollTransactionStatus: (txId: string) => pollTransactionStatus(txId),
   };
 };
 
