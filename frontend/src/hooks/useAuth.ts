@@ -29,20 +29,31 @@ export const useAuth = () => {
   /**
    * Fetch STX balance for a given address
    */
-  const fetchBalance = useCallback(async (address: string): Promise<bigint> => {
+  const fetchBalance = useCallback(async (address: string): Promise<bigint | null> => {
     try {
       const apiUrl = ACTIVE_NETWORK === 'testnet'
         ? 'https://api.testnet.hiro.so'
         : 'https://api.mainnet.hiro.so';
 
-      const response = await fetch(`${apiUrl}/v2/accounts/${address}`);
+      const response = await fetch(`${apiUrl}/v2/accounts/${address}`, {
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
       
       const balance = BigInt(data.balance || '0');
+      console.log('Balance fetched:', balance.toString());
       return balance;
     } catch (error) {
       console.error('Error fetching balance:', error);
-      return BigInt(0);
+      // Return null to indicate fetch failure, don't reset to 0
+      return null;
     }
   }, []);
 
@@ -54,14 +65,24 @@ export const useAuth = () => {
       const userData = userSession.loadUserData();
       const address = userData.profile.stxAddress[ACTIVE_NETWORK];
       const balance = await fetchBalance(address);
-      const balanceSTX = Number(balance) / 1_000_000;
-
-      setWalletState({
-        isConnected: true,
-        address,
-        balance,
-        balanceSTX,
-      });
+      
+      // Only update if we successfully fetched a balance
+      if (balance !== null) {
+        const balanceSTX = Number(balance) / 1_000_000;
+        setWalletState({
+          isConnected: true,
+          address,
+          balance,
+          balanceSTX,
+        });
+      } else {
+        // Keep existing balance if fetch fails, just update connection status
+        setWalletState(prev => ({
+          ...prev,
+          isConnected: true,
+          address,
+        }));
+      }
     } else {
       setWalletState({
         isConnected: false,
@@ -83,8 +104,9 @@ export const useAuth = () => {
         icon: window.location.origin + '/logo.png',
       },
       redirectTo: '/',
-      onFinish: () => {
-        updateWalletState();
+      onFinish: async () => {
+        // Update state and fetch balance after connect
+        await updateWalletState();
       },
       userSession,
     });
@@ -107,33 +129,53 @@ export const useAuth = () => {
    * Refresh balance
    */
   const refreshBalance = useCallback(async () => {
-    if (walletState.address) {
-      const balance = await fetchBalance(walletState.address);
-      const balanceSTX = Number(balance) / 1_000_000;
+    // Use a ref-like approach by getting current state
+    setWalletState(prev => {
+      if (prev.address) {
+        // Trigger async balance fetch
+        fetchBalance(prev.address).then(balance => {
+          if (balance !== null) {
+            const balanceSTX = Number(balance) / 1_000_000;
+            setWalletState(current => ({
+              ...current,
+              balance,
+              balanceSTX,
+            }));
+          }
+        });
+      }
+      return prev;
+    });
+  }, [fetchBalance]);
+
+  // Check if user is already signed in on mount - but don't fetch balance to prevent rate limiting
+  useEffect(() => {
+    if (userSession.isUserSignedIn()) {
+      const userData = userSession.loadUserData();
+      const address = userData.profile.stxAddress[ACTIVE_NETWORK];
       
-      setWalletState(prev => ({
-        ...prev,
-        balance,
-        balanceSTX,
-      }));
+      // Set connection state without fetching balance
+      setWalletState({
+        isConnected: true,
+        address,
+        balance: BigInt(0),
+        balanceSTX: 0,
+      });
     }
-  }, [walletState.address, fetchBalance]);
+    setIsLoading(false);
+  }, [userSession]);
 
-  // Check if user is already signed in on mount
-  useEffect(() => {
-    updateWalletState();
-  }, [updateWalletState]);
-
-  // Auto-refresh balance every 30 seconds if connected
-  useEffect(() => {
-    if (walletState.isConnected && walletState.address) {
-      const interval = setInterval(() => {
-        refreshBalance();
-      }, 30000); // 30 seconds
-
-      return () => clearInterval(interval);
-    }
-  }, [walletState.isConnected, walletState.address, refreshBalance]);
+  // Auto-refresh disabled to prevent rate limiting
+  // Users can manually refresh using the refresh button
+  // useEffect(() => {
+  //   if (walletState.isConnected && walletState.address) {
+  //     const interval = setInterval(() => {
+  //       refreshBalance();
+  //     }, 120000); // 2 minutes
+  //
+  //     return () => clearInterval(interval);
+  //   }
+  // }, [walletState.isConnected, walletState.address, refreshBalance]);
 
   return {
     // State
