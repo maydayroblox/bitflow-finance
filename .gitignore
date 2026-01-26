@@ -33,6 +33,9 @@ deployments/
 *.deployment-plan.yaml
 contracts/vault-core-deploy.clar
 
+# Mainnet credentials (even encrypted, keep private)
+settings/Mainnet.toml
+
 # Temporary/history files
 history.txt
 
